@@ -4,7 +4,7 @@
 # |_|\_|\_,_|_|_|_|_.__/\___|_|   |_| |_\__,_|\__\___| |_|_\___\__\___/\__, |_||_|_|\__|_\___/_||_|
 # 
 
-__version__ = '1.14.2' # Major, minor, patch
+__version__ = '1.14.3' # Major, minor, patch
 __author__ = 'Marcin Konowalczyk and Alexander Mitchell'
 __email__ = 'aaron@aigaming.com'
 __status__ = 'Development'
@@ -72,7 +72,7 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-def searchDictioary(dictionary, value):
+def searchDictionary(dictionary, value):
     ''' Find the key in the dictionary which corresponds to the value '''
     for k in dictionary:
         if dictionary[k] == value: return k
