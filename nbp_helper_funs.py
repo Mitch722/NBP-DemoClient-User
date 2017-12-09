@@ -23,7 +23,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 # from skimage.feature import match_template
 
-FONT_PATH = './UKNumberPlate.ttf'
+FONT_PATH = os.path.abspath(os.path.join('.','UKNumberPlate.ttf'))
 
 ############################
 ### GENERAL USEFUL STUFF ###
