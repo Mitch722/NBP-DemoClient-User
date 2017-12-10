@@ -16,11 +16,14 @@ Version {:s}
 
 import os
 import pickle
+import random
 from copy import deepcopy  # Currently not used
 from itertools import product
-from scipy import ndimage
+
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+from scipy import ndimage
+
 # from skimage.feature import match_template
 
 FONT_PATH = os.path.abspath(os.path.join('.','UKNumberPlate.ttf'))
@@ -258,6 +261,17 @@ def getPlate2(plate, height, fontSize=None, fontPath=FONT_PATH):
         cropBox[2] = min(nonEmptyCols)
         cropBox[3] = max(nonEmptyCols)
     return arr[cropBox[0]:cropBox[1]+1, cropBox[2]:cropBox[3]+1]
+
+def randomPlateString():
+    ''' Generate random number plate string
+    '''
+    letters = 'ABCDEFGHJKLMNOPQRSTUVWXYZ1234567890' # without I
+    return ''.join(random.choices(letters,k=4)) + ' ' + ''.join(random.choices(letters,k=3))
+
+def randomPlateImage(height, fontPath=FONT_PATH):
+    ''' Generate random number plate image
+    '''
+    return getPlate(randomPlateString(), height, fontPath=fontPath)
 
 ################################################
 ### Root-Mean-Square search though the image ###

@@ -29,8 +29,9 @@ There exist other powerful python packages for image processing which have not b
 - [Matplotlib colormap in a PIL image](https://stackoverflow.com/questions/10965417/how-to-convert-numpy-array-to-pil-image-applying-matplotlib-colormap)
 - [Static variables](https://stackoverflow.com/questions/279561/what-is-the-python-equivalent-of-static-variables-inside-a-function) in python
 - [Number plate font](https://www.dafont.com/uk-number-plate.font)
+- [Scale-Invariant Feature Transform](https://en.wikipedia.org/wiki/Scale-invariant_feature_transform) and [Speeded up robust features](https://en.wikipedia.org/wiki/Speeded_up_robust_features) are two feature-based algorithms (and a very good stack exchange [post](https://stackoverflow.com/questions/10168686/image-processing-algorithm-improvement-for-coca-cola-can-recognition?rq=1) about them)
 
-## ToDo
+## ToDo's
 
 Things which need to be done and a few ideas on what could be done
 
@@ -42,8 +43,11 @@ Things which need to be done and a few ideas on what could be done
 
 - Make use of some number plate statistics (for example [this](https://www.gov.uk/vehicle-registration/q-registration-numbers))
 - Pull images from the links provided in the `gamestate` instead of using the hard-coded library.
+- Make use of the color in the images. This will require one to rewrite a bunch of code in the helper functions including some really core stuff like `pil2np` and `np2pil` though
+- 
 
 ### Hard
 
-- Make the RMSSearch faster
-- Use some cutting-edge cv2 trickery (which is huge and a pain to import in python)
+- Write own class for (RGB?) images which should probably hold them as `numpy` arrays and convert to `PIL` when necessary
+- Make the `RMSMultiSearch` faster
+- Use some cutting-edge cv2/scikit-learn trickery voodoo
