@@ -358,8 +358,9 @@ def findBlurDirection1(im, buffer=20, medfilt=5, theshold=0.5, pad=20):
     rightBlur = shortEdge/nmb - 1
     return (upBlur, rightBlur)
 
-def makeMotionKernel(size, orientation=True):
+def makeMotionKernel(blur, orientation=True):
     ''' Finds the numpy array that is the kernel for the motion blur '''
+    size = blur/2 # size of the 
     if int(size/2) == size/2: size += 1
     kernel = np.zeros((size, size))
     kernel[int((size - 1) / 2), :] = np.ones(size)
