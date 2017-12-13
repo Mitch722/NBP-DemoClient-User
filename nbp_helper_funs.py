@@ -4,7 +4,7 @@
 # |_|\_|\_,_|_|_|_|_.__/\___|_|   |_| |_\__,_|\__\___| |_|_\___\__\___/\__, |_||_|_|\__|_\___/_||_|
 # 
 
-__version__ = '1.15.0' # Major, minor, patch
+__version__ = '1.15.2' # Major, minor, patch
 __author__ = 'Marcin Konowalczyk and Alexander Mitchell'
 __email__ = 'aaron@aigaming.com'
 __status__ = 'Development'
@@ -38,7 +38,6 @@ def setStaticVars(**kwargs):
     ''' Decorator to set the static variables of a function
         https://stackoverflow.com/questions/279561/what-is-the-python-equivalent-of-static-variables-inside-a-function
     '''
-    @wraps(f)
     def wrapper(f):
         for k in kwargs:
             setattr(f, k, kwargs[k])
@@ -57,7 +56,7 @@ def validateByAnnotations(f):
             ann = anns[name]
             if type(ann) == function:
                 try: 
-                    pr = ann.__name__+': '+test.__docstring__
+                    pr = ann.__name__+': '+ann.__docstring__
                 except AttributeError:
                     pr = ann.__name__   
                 msg = '{}=={}; Test: {}'.format(name, value, pr)
@@ -129,7 +128,8 @@ def PILimage(x):
 ### PIL <-> Numpy conversion ###
 ################################
 
-def pil2np(im):
+@validateByAnnotations
+def pil2np(im: PILimage):
     ''' Pillow image to Numpy array '''
     # Return (0,1) numpy array for each channel of im
     if im.mode == 'L':
@@ -167,20 +167,29 @@ def openGrayScale(imageDir):
     ''' Open grayscale image '''
     return Image.open(imageDir).convert('L')
 
-def gaussBlur(im, radius=2):
+@validateByAnnotations
+def gaussBlur(im: PILimage, radius=2):
     ''' Gaussian blur of the image '''
     if radius > 0: return im.filter(ImageFilter.GaussianBlur(radius=radius))
     return im
 
-def normaliseIntensity(im, cutoff=1):
+@validateByAnnotations
+def normaliseIntensity(im: PILimage, cutoff=1):
     ''' Normalise the intensity of the image '''
     return ImageOps.autocontrast(im, cutoff=cutoff)
 
-def binarizeImage(im, threshold=0.5, blur=0):
+@validateByAnnotations
+def binarizeImage(im: PILimage, threshold=0.5, blur=0):
     ''' Binarise the image and return it as a numpy array '''
     return np2pil(pil2np(gaussBlur(im, blur))>threshold)
 
-def cropContourImg(im, threshold=0.5, blur=0, pad=10):
+@validateByAnnotations
+def padImage(im: PILimage, pad, fill=0):
+    ''' Pad image with pixels '''
+    return ImageOps.expand(im,border=pad,fill=fill)
+
+@validateByAnnotations
+def cropContourImg(im: PILimage, threshold=0.5, blur=0, pad=10):
     ''' Crop the image according to the threshold (with additional pad) '''
     left, upper, right, lower = binarizeImage(im, threshold=threshold, blur=blur).getbbox()
     if pad > 0:
@@ -191,7 +200,8 @@ def cropContourImg(im, threshold=0.5, blur=0, pad=10):
         lower = min((h,lower+pad))
     return im.crop((left, upper, right, lower))
 
-def getCorners(im, threshold=0.5, blur=0):
+@validateByAnnotations
+def getCorners(im: PILimage, threshold=0.5, blur=0):
     ''' Get the corners of the numberplate image '''
     im = pil2np(binarizeImage(im, threshold=threshold, blur=blur))
     h, w = im.shape
@@ -205,14 +215,16 @@ def getCorners(im, threshold=0.5, blur=0):
             if f(hi,(w-wi))     > f(   c[3][0] ,(w-c[3][1])): c[3] = (hi,wi)
     return list((p[1],p[0]) for p in c)
 
-def straightenImage(im, c, size=(280,60), pad:int=10, color:int=0):
+@validateByAnnotations
+def straightenImage(im: PILimage, c, size=(280,60), pad:int=10, color:int=0):
     ''' Straighten the image, given corners '''
     w, h = size
     c2 = list((x+pad,y+pad) for x,y in [(0, 0), (w,0), (w,h), (0,h)])
     coeffs = getTransformCoeffs(c,c2)
     return im.transform((w+2*pad, h+2*pad), Image.PERSPECTIVE, coeffs, Image.BICUBIC)
 
-def findEdges1(im, blur=0):
+@validateByAnnotations
+def findEdges1(im: PILimage, blur=0):
     ''' Find edges method 1 '''
     im = gaussBlur(im, blur)
     # Laplacian edge detect
@@ -221,13 +233,15 @@ def findEdges1(im, blur=0):
               -1, -1, -1)
     return im.filter(ImageFilter.Kernel((3, 3),kernel,scale=1,offset=255))
 
-def findEdges2(im, blur=0):
+@validateByAnnotations
+def findEdges2(im: PILimage, blur=0):
     ''' Find edges method 2 '''
     im = gaussBlur(im, blur)
     arr = 2*pil2np(im)-1
     return np2pil(arr)
 
-def downsample(im, factor):
+@validateByAnnotations
+def downsample(im: PILimage, factor):
     ''' Downsample by a factor '''
     if factor > 0.0:
         w, h = im.size
@@ -245,7 +259,7 @@ def getFont(size=100, fontPath=FONT_PATH):
         getFont.font = ImageFont.truetype(fontPath, size)
     return getFont.font
 
-def getPlate(plate, height, fontPath=FONT_PATH):
+def getPlate(plate, height, fontPath=FONT_PATH, pad=0):
     ''' Gets an image of a 'plate' of a certain height '''
     fontSize = int(1.5*height) # Open font of approx. the right height
     font = getFont(size=fontSize, fontPath=fontPath)
@@ -265,14 +279,15 @@ def getPlate(plate, height, fontPath=FONT_PATH):
         cropBox[2] = min(nonEmptyCols)
         cropBox[3] = max(nonEmptyCols)
     arr = arr[cropBox[0]:cropBox[1]+1, cropBox[2]:cropBox[3]+1]
+    # Resize to the correct height and pad if necessary
     im = np2pil(arr)
-    size = im.size
-
-    return im.resize((int(size[0]*height/size[1]),height),resample=Image.BILINEAR)
+    im = im.resize((int(im.size[0]*height/im.size[1]),height),resample=Image.BILINEAR)
+    if pad > 0: im = padImage(im, pad, 'white')
+    return im
 
 def getPlate2(plate, height, fontSize=None, fontPath=FONT_PATH):
     ''' Gets a numpy array of a 'plate' of a certain height
-        Faster than getPlate2
+        Work's less well than getPlate but is slightly faster. Needs more investigation.
     '''
     # Fudge factor to get the right height of the letters with the default font
     fontSize = fontSize if fontSize else int(1.465*height)
@@ -294,15 +309,13 @@ def getPlate2(plate, height, fontSize=None, fontPath=FONT_PATH):
     return arr[cropBox[0]:cropBox[1]+1, cropBox[2]:cropBox[3]+1]
 
 def randomPlateString():
-    ''' Generate random number plate string
-    '''
+    ''' Generate random number plate string '''
     letters = 'ABCDEFGHJKLMNOPQRSTUVWXYZ1234567890' # without I
     return ''.join(random.choices(letters,k=4)) + ' ' + ''.join(random.choices(letters,k=3))
 
-def randomPlateImage(height, fontPath=FONT_PATH):
-    ''' Generate random number plate image
-    '''
-    return getPlate(randomPlateString(), height, fontPath=fontPath)
+def randomPlateImage(height, fontPath=FONT_PATH, pad=0):
+    ''' Generate random number plate image '''
+    return getPlate(randomPlateString(), height, fontPath=fontPath, pad=pad)
 
 ################################################
 ### Root-Mean-Square search though the image ###
@@ -398,9 +411,9 @@ def makeMotionKernel(blur, orientation=True):
     if orientation == True: kernel = kernel.T / size
     return kernel
 
-def convolveImages(image, kernel):
+def convolveImages(im, kernel):
     ''' Convolves images using ndimage and the correct default inputs '''
-    return ndimage.convolve(image, kernel, mode='constant', cval=1.0)
+    return ndimage.convolve(im, kernel, mode='constant', cval=1.0)
 
 ############################
 ### Image transformation ###
@@ -440,10 +453,10 @@ def getTranslationMatrix(dx, dy, dz):
                      [ 0    ,  0    ,  1    ,  dz  ],
                      [ 0    ,  0    ,  0    ,  1  ]])
 
-def getRotationMatrix(da, db, dg):
+def getRotationMatrix(alpha, beta, gamma):
     ''' Get Rotation matrix (in homogenous coordinates) '''
-    c = list(np.cos(angle) for angle in (da, db, dg))
-    s = list(np.sin(angle) for angle in (da, db, dg))
+    c = list(np.cos(angle) for angle in (alpha, beta, gamma))
+    s = list(np.sin(angle) for angle in (alpha, beta, gamma))
     # Three rotation matrices for three planes
     Ra = np.array([[ c[0] , -s[0] ,  0    ,  0   ],
                    [ s[0] ,  c[0] ,  0    ,  0   ],
@@ -461,7 +474,7 @@ def getRotationMatrix(da, db, dg):
 
 def P2wh(P):
     ''' Figure out the width and height of the final image from points '''
-    return tuple(int(x) for x in np.ceil(np.max(list(zip(*P2)),axis=1)))
+    return tuple(int(x) for x in np.ceil(np.max(list(zip(*P)),axis=1)))
 
 def getProjectionMatrix(f=np.inf):
     ''' Get a Projection matrix (in homogenous coordinates) '''
@@ -471,7 +484,7 @@ def getProjectionMatrix(f=np.inf):
                      [ 0    ,  0    ,  1/f  ,  0   ]])
 
 @validateByAnnotations
-def perspectiveRotate(im: PILimage, angles: '[alpha, beta, gamma]', f=None):
+def perspectiveRotate(im: PILimage, angles: '[alpha, beta, gamma]', focalLength=None):
     ''' Apply a perspective rotation to an image'''
     w,h = im.size
     P1 = [(0,0),(w,0),(w,h),(0,h)] # Corners of the image
@@ -481,16 +494,15 @@ def perspectiveRotate(im: PILimage, angles: '[alpha, beta, gamma]', f=None):
     # Rotate by the angles
     R = getRotationMatrix(*angles)
     # Push 'f' away on the z axis and project onto the focal plane
-    f = max(w,h) # Focal plane distance
+    f = focalLength if focalLength else max(w,h) # Focal plane distance
     Tf = getTranslationMatrix(0,0,f)
     pP = getProjectionMatrix(f)
     # Apply all the transformations to H
     H = pP @ Tf @ R @ Tc @ H
-    P2 = n2p(xyZeroN(h2n(H2)))
+    P2 = n2p(xyZeroN(h2n(H)))
     coeffs = getTransformCoeffs(P1,P2)
     return im.transform(P2wh(P2), Image.PERSPECTIVE, coeffs, Image.BICUBIC)
 
-# 
 def getTransformCoeffs(pa: 'current corners', pb: 'transformed corners'):
     ''' Calculate the perspective transfrom coefficients
         https://stackoverflow.com/questions/14177744/how-does-perspective-transformation-work-in-pil
