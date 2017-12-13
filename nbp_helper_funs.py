@@ -4,7 +4,7 @@
 # |_|\_|\_,_|_|_|_|_.__/\___|_|   |_| |_\__,_|\__\___| |_|_\___\__\___/\__, |_||_|_|\__|_\___/_||_|
 # 
 
-__version__ = '1.14.3' # Major, minor, patch
+__version__ = '1.15.0' # Major, minor, patch
 __author__ = 'Marcin Konowalczyk and Alexander Mitchell'
 __email__ = 'aaron@aigaming.com'
 __status__ = 'Development'
@@ -19,6 +19,8 @@ import pickle
 import random
 from copy import deepcopy  # Currently not used
 from itertools import product
+from functools import wraps
+from types import FunctionType as function
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
@@ -36,10 +38,44 @@ def setStaticVars(**kwargs):
     ''' Decorator to set the static variables of a function
         https://stackoverflow.com/questions/279561/what-is-the-python-equivalent-of-static-variables-inside-a-function
     '''
-    def decorate(func):
-        for k in kwargs: setattr(func, k, kwargs[k])
-        return func
-    return decorate
+    @wraps(f)
+    def wrapper(f):
+        for k in kwargs:
+            setattr(f, k, kwargs[k])
+        return f
+    return wrapper
+
+def validateByAnnotations(f):
+    ''' Decorator to use the annotation functions as validators '''
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        anns = f.__annotations__
+        varnames = f.__code__.co_varnames
+        if len(anns) < 1: return f(*args, **kwargs) # No annotaions
+
+        def check(name, value):
+            ann = anns[name]
+            if type(ann) == function:
+                try: 
+                    pr = ann.__name__+': '+test.__docstring__
+                except AttributeError:
+                    pr = ann.__name__   
+                msg = '{}=={}; Test: {}'.format(name, value, pr)
+                assert ann(value), msg
+        
+        # Go though args                   
+        for name, value in zip(varnames[0:len(args)], args):
+            if name in anns.keys():
+                check(name,value)
+
+        # Go though kwargs
+        for name in varnames[len(args):]:
+            if name in anns.keys() and name in kwargs.keys():
+                value = kwargs[name]
+                check(name,value)
+                
+        return f(*args, **kwargs)
+    return wrapper
 
 def findAllInDir(directory, extenstion='.jpg', sort=False, addDir=True):
     ''' Finds all files in the 'directory' with the correct 'extension' '''
@@ -79,6 +115,15 @@ def searchDictionary(dictionary, value):
     ''' Find the key in the dictionary which corresponds to the value '''
     for k in dictionary:
         if dictionary[k] == value: return k
+
+##############################
+### Input validation stuff ###
+##############################
+
+def PILimage(x):
+    ''' Check if input is a PIL image '''
+    PILimage.__docstring__= 'must be a PIL image'
+    return type(x) == Image.Image
 
 ################################
 ### PIL <-> Numpy conversion ###
@@ -159,20 +204,6 @@ def getCorners(im, threshold=0.5, blur=0):
             if f(hi,wi)         > f(   c[2][0] ,   c[2][1] ): c[2] = (hi,wi)
             if f(hi,(w-wi))     > f(   c[3][0] ,(w-c[3][1])): c[3] = (hi,wi)
     return list((p[1],p[0]) for p in c)
-
-def getTransformCoeffs(pa: 'current corners', pb: 'transfrormed corners'):
-    ''' Calculate the perspective transfrom coefficients
-        https://stackoverflow.com/questions/14177744/how-does-perspective-transformation-work-in-pil
-    '''
-    matrix = []
-    for p1, p2 in zip(pb, pa):
-        matrix.append([p1[0], p1[1], 1, 0, 0, 0, -p2[0]*p1[0], -p2[0]*p1[1]])
-        matrix.append([0, 0, 0, p1[0], p1[1], 1, -p2[1]*p1[0], -p2[1]*p1[1]])
-
-    A = np.array(pa).reshape(8)
-    B = np.matrix(matrix, dtype=np.float)
-
-    return np.array(np.dot(np.linalg.inv(B.T * B) * B.T, A)).reshape(8)
 
 def straightenImage(im, c, size=(280,60), pad:int=10, color:int=0):
     ''' Straighten the image, given corners '''
@@ -370,6 +401,108 @@ def makeMotionKernel(blur, orientation=True):
 def convolveImages(image, kernel):
     ''' Convolves images using ndimage and the correct default inputs '''
     return ndimage.convolve(image, kernel, mode='constant', cval=1.0)
+
+############################
+### Image transformation ###
+############################
+# https://kogs-www.informatik.uni-hamburg.de/~neumann/BV-WS-2007/BV-3-07.pdf
+
+# Transformations between coordinate representations
+def p2n(P):
+    ''' Transfrom from image points to Normal coordinates '''
+    return np.array(list([p[1], p[0], 0] for p in P)).T
+
+def n2p(N):
+    ''' Transform from Normal coordinates to image points '''
+    return list(( (c[1], c[0]) for c in N.T))
+
+def n2h(N, w=1):
+    ''' Transform to Homogenous image coordinates '''
+    return np.array(list(list(w*x for x in n) + [w,] for n in N.T)).T
+
+def h2n(H):
+    ''' Transfrom back to Normal image coordiantes '''
+    return np.array(list(h[:-1]/h[-1] for h in H.T)).T
+
+# Translations in Normal coordinates
+def xyCenterN(N):
+    ''' Shift N to be centered around the origin in the xy plane '''
+    return np.array(list(r - np.mean(r) for r in N[:-1]) + [N[-1],])
+
+def xyZeroN(N):
+    ''' Sift N to have top left corner of the image at the origin in the xy plane '''
+    return np.array(list(r - np.min(r) for r in N[:-1]) + [N[-1],])
+
+def getTranslationMatrix(dx, dy, dz):
+    ''' Get a Translation matrix (in homogenous coordinates) '''
+    return np.array([[ 1    ,  0    ,  0    ,  dx ],
+                     [ 0    ,  1    ,  0    ,  dy ],
+                     [ 0    ,  0    ,  1    ,  dz  ],
+                     [ 0    ,  0    ,  0    ,  1  ]])
+
+def getRotationMatrix(da, db, dg):
+    ''' Get Rotation matrix (in homogenous coordinates) '''
+    c = list(np.cos(angle) for angle in (da, db, dg))
+    s = list(np.sin(angle) for angle in (da, db, dg))
+    # Three rotation matrices for three planes
+    Ra = np.array([[ c[0] , -s[0] ,  0    ,  0   ],
+                   [ s[0] ,  c[0] ,  0    ,  0   ],
+                   [ 0    ,  0    ,  1    ,  0   ],
+                   [ 0    ,  0    ,  0    ,  1   ]])
+    Rb = np.array([[ c[1] ,  0    , -s[1] ,  0   ],
+                   [ 0    ,  1    ,  0    ,  0   ],
+                   [ s[1] ,  0    ,  c[1] ,  0   ],
+                   [ 0    ,  0    ,  0    ,  1   ]])
+    Rg = np.array([[ 1    ,  0    ,  0    ,  0   ],
+                   [ 0    ,  c[2] , -s[2] ,  0   ],
+                   [ 0    ,  s[2] ,  c[2] ,  0   ],
+                   [ 0    ,  0    ,  0    ,  1   ]])
+    return Rg @ Rb @ Ra
+
+def P2wh(P):
+    ''' Figure out the width and height of the final image from points '''
+    return tuple(int(x) for x in np.ceil(np.max(list(zip(*P2)),axis=1)))
+
+def getProjectionMatrix(f=np.inf):
+    ''' Get a Projection matrix (in homogenous coordinates) '''
+    return np.array([[ 1    ,  0    ,  0    ,  0   ],
+                     [ 0    ,  1    ,  0    ,  0   ],
+                     [ 0    ,  0    ,  1    ,  0   ],
+                     [ 0    ,  0    ,  1/f  ,  0   ]])
+
+@validateByAnnotations
+def perspectiveRotate(im: PILimage, angles: '[alpha, beta, gamma]', f=None):
+    ''' Apply a perspective rotation to an image'''
+    w,h = im.size
+    P1 = [(0,0),(w,0),(w,h),(0,h)] # Corners of the image
+    H = n2h(p2n(P1)) # Convert to homogenous space coordinates
+    # Translation to center coordinates in xy plane
+    Tc = getTranslationMatrix(-h/2,-w/2,0)
+    # Rotate by the angles
+    R = getRotationMatrix(*angles)
+    # Push 'f' away on the z axis and project onto the focal plane
+    f = max(w,h) # Focal plane distance
+    Tf = getTranslationMatrix(0,0,f)
+    pP = getProjectionMatrix(f)
+    # Apply all the transformations to H
+    H = pP @ Tf @ R @ Tc @ H
+    P2 = n2p(xyZeroN(h2n(H2)))
+    coeffs = getTransformCoeffs(P1,P2)
+    return im.transform(P2wh(P2), Image.PERSPECTIVE, coeffs, Image.BICUBIC)
+
+# 
+def getTransformCoeffs(pa: 'current corners', pb: 'transformed corners'):
+    ''' Calculate the perspective transfrom coefficients
+        https://stackoverflow.com/questions/14177744/how-does-perspective-transformation-work-in-pil
+    '''
+    matrix = []
+    for p1, p2 in zip(pb, pa):
+        matrix.append([p1[0], p1[1], 1, 0, 0, 0, -p2[0]*p1[0], -p2[0]*p1[1]])
+        matrix.append([0, 0, 0, p1[0], p1[1], 1, -p2[1]*p1[0], -p2[1]*p1[1]])
+    A = np.array(pa).reshape(8)
+    B = np.matrix(matrix, dtype=np.float)
+    return np.array(np.dot(np.linalg.inv(B.T * B) * B.T, A)).reshape(8)
+
 
 # @setStaticVars(processed={})
 # def getLetterAspectRatio(letter, font):
