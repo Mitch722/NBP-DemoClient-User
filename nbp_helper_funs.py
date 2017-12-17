@@ -78,9 +78,9 @@ def validateByAnnotations(f):
 
 def findAllInDir(directory, extenstion='.jpg', sort=False, addDir=True):
     ''' Finds all files in the 'directory' with the correct 'extension' '''
-    files = list(file for file in os.listdir(directory) if file.endswith(extenstion))
+    files = [file for file in os.listdir(directory) if file.endswith(extenstion)]
     if sort: files = sorted(files)
-    if addDir: files = list(os.path.join(directory, file) for file in files) 
+    if addDir: files = [os.path.join(directory, file) for file in files]
     return files
 
 def edgeDistance(p, size):
@@ -137,7 +137,7 @@ def pil2np(im: PILimage):
     elif im.mode == '1':
         return np.asarray(im.getdata(), dtype=np.uint8).reshape((im.size[1], im.size[0]))
     else:
-        return list(pil2np(a) for a in im.split())
+        return [pil2np(a) for a in im.split()]
 
 def np2pil(arr, alpha=None):
     ''' Numpy array to Pillow image '''
@@ -213,13 +213,13 @@ def getCorners(im: PILimage, threshold=0.5, blur=0):
             if f((h-hi),wi)     > f((h-c[1][0]),   c[1][1] ): c[1] = (hi,wi)
             if f(hi,wi)         > f(   c[2][0] ,   c[2][1] ): c[2] = (hi,wi)
             if f(hi,(w-wi))     > f(   c[3][0] ,(w-c[3][1])): c[3] = (hi,wi)
-    return list((p[1],p[0]) for p in c)
+    return [(p[1],p[0]) for p in c]
 
 @validateByAnnotations
 def straightenImage(im: PILimage, c, size=(280,60), pad:int=10, color:int=0):
     ''' Straighten the image, given corners '''
     w, h = size
-    c2 = list((x+pad,y+pad) for x,y in [(0, 0), (w,0), (w,h), (0,h)])
+    c2 = [(x+pad,y+pad) for x,y in [(0, 0), (w,0), (w,h), (0,h)]]
     coeffs = getTransformCoeffs(c,c2)
     return im.transform((w+2*pad, h+2*pad), Image.PERSPECTIVE, coeffs, Image.BICUBIC)
 
@@ -362,7 +362,7 @@ def findConfidence1(scores, normFun=None):
     m = np.mean(scores)
     s = np.std(scores)
     norm = normFun if normFun else normaliseConfidence1
-    return list( norm(max((0,score - m))/s) for score in scores )
+    return [norm(max((0,score - m))/s) for score in scores]
 
 # def RMSSearch2(im1, im2):
 #     ''' Find best RMS fit of arrays im2 in im1
@@ -423,28 +423,28 @@ def convolveImages(im, kernel):
 # Transformations between coordinate representations
 def p2n(P):
     ''' Transfrom from image points to Normal coordinates '''
-    return np.array(list([p[1], p[0], 0] for p in P)).T
+    return np.array([[p[1], p[0], 0] for p in P]).T
 
 def n2p(N):
     ''' Transform from Normal coordinates to image points '''
-    return list(( (c[1], c[0]) for c in N.T))
+    return [( (c[1], c[0]) for c in N.T)]
 
 def n2h(N, w=1):
     ''' Transform to Homogenous image coordinates '''
-    return np.array(list(list(w*x for x in n) + [w,] for n in N.T)).T
+    return np.array([[w*x for x in n] + [w,] for n in N.T]).T
 
 def h2n(H):
     ''' Transfrom back to Normal image coordiantes '''
-    return np.array(list(h[:-1]/h[-1] for h in H.T)).T
+    return np.array([h[:-1]/h[-1] for h in H.T]).T
 
 # Translations in Normal coordinates
 def xyCenterN(N):
     ''' Shift N to be centered around the origin in the xy plane '''
-    return np.array(list(r - np.mean(r) for r in N[:-1]) + [N[-1],])
+    return np.array([r - np.mean(r) for r in N[:-1]] + [N[-1],])
 
 def xyZeroN(N):
     ''' Sift N to have top left corner of the image at the origin in the xy plane '''
-    return np.array(list(r - np.min(r) for r in N[:-1]) + [N[-1],])
+    return np.array([r - np.min(r) for r in N[:-1]] + [N[-1],])
 
 def getTranslationMatrix(dx, dy, dz):
     ''' Get a Translation matrix (in homogenous coordinates) '''
@@ -455,8 +455,8 @@ def getTranslationMatrix(dx, dy, dz):
 
 def getRotationMatrix(alpha, beta, gamma):
     ''' Get Rotation matrix (in homogenous coordinates) '''
-    c = list(np.cos(angle) for angle in (alpha, beta, gamma))
-    s = list(np.sin(angle) for angle in (alpha, beta, gamma))
+    c = [np.cos(angle) for angle in (alpha, beta, gamma)]
+    s = [np.sin(angle) for angle in (alpha, beta, gamma)]
     # Three rotation matrices for three planes
     Ra = np.array([[ c[0] , -s[0] ,  0    ,  0   ],
                    [ s[0] ,  c[0] ,  0    ,  0   ],
